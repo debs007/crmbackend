@@ -47,8 +47,14 @@ exports.getMyProfile = async (req, res) => {
   }
 };
 
-// POST /profile/avatar — multipart upload of a new profile picture
+// POST /profile/avatar — multipart upload of a new profile picture.
 // Cloudinary URL is saved on the matching identity record.
+//
+// Note: we use save({ validateBeforeSave: false }) because some identity
+// schemas (especially Admin, where the `password` field is `required` and
+// already hashed in storage) will throw spurious validation errors when we
+// try to save just the avatar field. We're only changing the one field so
+// skipping validation is safe here.
 exports.uploadAvatar = async (req, res) => {
   try {
     const file = req.file;
@@ -57,20 +63,44 @@ exports.uploadAvatar = async (req, res) => {
         .status(400)
         .json({ success: false, message: "No file uploaded" });
     }
+    if (!file.mimetype || !file.mimetype.startsWith("image/")) {
+      return res
+        .status(400)
+        .json({ success: false, message: "File must be an image" });
+    }
 
     const { entity, type } = await findIdentity(req.user?.userId);
     if (!entity) {
-      return res.status(404).json({ success: false, message: "Profile not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Profile not found for the signed-in user" });
     }
 
-    const url = await uploadToCloudinary(
-      file.buffer,
-      file.originalname || "avatar",
-      "avatars"
-    );
+    let url;
+    try {
+      url = await uploadToCloudinary(
+        file.buffer,
+        file.originalname || "avatar",
+        "avatars"
+      );
+    } catch (uploadError) {
+      console.error("Cloudinary upload failed:", uploadError);
+      return res.status(502).json({
+        success: false,
+        message: "Image upload to storage failed: " + (uploadError?.message || "unknown"),
+      });
+    }
 
     entity.avatar = url;
-    await entity.save();
+    try {
+      await entity.save({ validateBeforeSave: false });
+    } catch (saveError) {
+      console.error("Saving avatar to identity failed:", saveError);
+      return res.status(500).json({
+        success: false,
+        message: "Could not persist avatar: " + (saveError?.message || "unknown"),
+      });
+    }
 
     return res.json({
       success: true,
@@ -81,7 +111,7 @@ exports.uploadAvatar = async (req, res) => {
     console.error("uploadAvatar error:", error);
     return res
       .status(500)
-      .json({ success: false, message: "Internal server error" });
+      .json({ success: false, message: error?.message || "Internal server error" });
   }
 };
 
@@ -93,13 +123,13 @@ exports.removeAvatar = async (req, res) => {
       return res.status(404).json({ success: false, message: "Profile not found" });
     }
     entity.avatar = "";
-    await entity.save();
+    await entity.save({ validateBeforeSave: false });
     return res.json({ success: true, profile: sanitizeIdentity(entity, type) });
   } catch (error) {
     console.error("removeAvatar error:", error);
     return res
       .status(500)
-      .json({ success: false, message: "Internal server error" });
+      .json({ success: false, message: error?.message || "Internal server error" });
   }
 };
 

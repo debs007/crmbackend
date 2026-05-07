@@ -5,7 +5,23 @@ const ChannelMessageSchema = new mongoose.Schema({
   sender: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   isSystem: { type: Boolean, default: false },
   systemLabel: { type: String, default: null },
-  message: { type: String, required: true },
+  message: {
+    type: String,
+    // Required only when there are no attachments; an attachment-only post
+    // is fine.
+    required: function () {
+      return !this.attachments || this.attachments.length === 0;
+    },
+    default: "",
+  },
+  // Optional list of attachment URLs (Cloudinary). When present, the renderer
+  // shows them as a grid/carousel and treats `message` as caption text.
+  // Sending one or more files goes here instead of as separate messages so
+  // they can be edited/deleted/replied to as a single unit.
+  attachments: {
+    type: [String],
+    default: [],
+  },
   // Mentioned user IDs (any of User/Admin/Client) at time of send.
   mentions: {
     type: [mongoose.Schema.Types.ObjectId],

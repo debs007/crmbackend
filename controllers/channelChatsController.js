@@ -87,12 +87,28 @@ const sanitizeMentions = (rawMentions = [], channel) => {
 // ---- Send a new channel message (with optional mentions) ----
 exports.sendChannelMessage = async (req, res) => {
   try {
-    const { sender, channelId, message, replyTo, mentions: rawMentions } = req.body;
+    const {
+      sender,
+      channelId,
+      message,
+      replyTo,
+      mentions: rawMentions,
+      attachments: rawAttachments,
+    } = req.body;
 
-    if (!sender || !channelId || !message) {
+    // Sanitize attachments: must be a non-empty array of strings (URLs).
+    const attachments = Array.isArray(rawAttachments)
+      ? rawAttachments
+          .filter((u) => typeof u === "string" && u.trim().length > 0)
+          .slice(0, 20) // hard cap
+      : [];
+
+    // A message must have either text or at least one attachment.
+    const text = typeof message === "string" ? message : "";
+    if (!sender || !channelId || (!text.trim() && attachments.length === 0)) {
       return res
         .status(400)
-        .json({ success: false, message: "All fields are required." });
+        .json({ success: false, message: "Empty message." });
     }
 
     const channel = await Channel.findById(channelId);
@@ -134,7 +150,8 @@ exports.sendChannelMessage = async (req, res) => {
     const newMessage = new ChannelMessage({
       sender,
       channelId,
-      message,
+      message: text,
+      attachments,
       mentions,
       seenBy: sender ? [sender] : [],
       ...(replyMeta || {}),
@@ -175,6 +192,14 @@ exports.sendChannelMessage = async (req, res) => {
           !mentionSet.has(memberId)
       );
 
+      // Build a sensible preview line for the email body — text if any,
+      // else a short "[N attachment(s)]" stub.
+      const previewLine = (text && text.trim())
+        ? text
+        : attachments.length
+        ? `[${attachments.length} attachment${attachments.length === 1 ? "" : "s"}]`
+        : "";
+
       await Promise.all(
         offlineRecipients.map(async (memberId) => {
           const member = await resolveUserEntity(memberId);
@@ -182,7 +207,7 @@ exports.sendChannelMessage = async (req, res) => {
           await sendMail(
             member.email,
             `New message in ${channelName}`,
-            `${senderName} sent a message in ${channelName}: ${message}`
+            `${senderName} sent a message in ${channelName}: ${previewLine}`
           );
         })
       );
@@ -192,6 +217,11 @@ exports.sendChannelMessage = async (req, res) => {
     // For everyone explicitly mentioned: an in-app notification if online,
     // and an email if offline. Mentioning yourself is a no-op.
     if (mentions.length) {
+      const mentionPreview = (text && text.trim())
+        ? text
+        : attachments.length
+        ? `[${attachments.length} attachment${attachments.length === 1 ? "" : "s"}]`
+        : "";
       await Promise.all(
         mentions.map(async (mentionedId) => {
           if (!mentionedId || mentionedId === sender?.toString()) return;
@@ -201,7 +231,7 @@ exports.sendChannelMessage = async (req, res) => {
           if (isUserOnline(mentionedId)) {
             emitToUser(mentionedId, "receive-notification", {
               title: `You were mentioned in ${channelName}`,
-              description: `${senderName}: ${message}`,
+              description: `${senderName}: ${mentionPreview}`,
               sender: channelId,
               name: senderName,
               type: "mention",
@@ -213,7 +243,7 @@ exports.sendChannelMessage = async (req, res) => {
               await sendMail(
                 mentioned.email,
                 `${senderName} mentioned you in ${channelName}`,
-                `Hello ${mentioned.name || ""},\n\n${senderName} mentioned you in the channel "${channelName}":\n\n${message}\n\nLog in to reply.`
+                `Hello ${mentioned.name || ""},\n\n${senderName} mentioned you in the channel "${channelName}":\n\n${mentionPreview}\n\nLog in to reply.`
               );
             } catch (mailError) {
               console.warn("mention email failed:", mailError?.message);

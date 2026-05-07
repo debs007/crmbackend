@@ -63,12 +63,19 @@ const buildReplyPreview = (value = "") => {
 // ---- Send DM ----
 const sendMessage = async (req, res) => {
   try {
-    const { sender, receiver, message, replyTo } = req.body;
+    const { sender, receiver, message, replyTo, attachments: rawAttachments } = req.body;
 
-    if (!sender || !receiver || !message) {
+    const attachments = Array.isArray(rawAttachments)
+      ? rawAttachments
+          .filter((u) => typeof u === "string" && u.trim().length > 0)
+          .slice(0, 20)
+      : [];
+
+    const text = typeof message === "string" ? message : "";
+    if (!sender || !receiver || (!text.trim() && attachments.length === 0)) {
       return res
         .status(400)
-        .json({ success: false, message: "All fields are required." });
+        .json({ success: false, message: "Empty message." });
     }
 
     const senderEntity = await resolveUserEntity(sender);
@@ -112,10 +119,18 @@ const sendMessage = async (req, res) => {
     const newMessage = new DirectMessage({
       sender,
       receiver,
-      message,
+      message: text,
+      attachments,
       ...(replyMeta || {}),
     });
     await newMessage.save();
+
+    // Preview line — text if any, otherwise mention the attachment count.
+    const previewLine = text.trim()
+      ? text
+      : attachments.length
+      ? `[${attachments.length} attachment${attachments.length === 1 ? "" : "s"}]`
+      : "";
 
     const receiverIsOnline = isUserOnline(receiver);
     const senderIsOnline = isUserOnline(sender);
@@ -126,7 +141,7 @@ const sendMessage = async (req, res) => {
       if (!isSelfMessage) {
         emitToUser(receiver, "receive-notification", {
           title: `${senderName} sent a message`,
-          description: message,
+          description: previewLine,
           sender,
           name: senderName,
           type: "DM",
@@ -149,7 +164,7 @@ const sendMessage = async (req, res) => {
       const mailSent = await sendMail(
         receiverEntity.email,
         `New message from ${senderName}`,
-        message
+        previewLine
       );
       if (!mailSent) {
         console.warn("Failed to send offline message email.");

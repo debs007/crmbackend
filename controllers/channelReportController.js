@@ -78,6 +78,44 @@ exports.uploadMonthlyReport = async (req, res) => {
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
+    // Post a system message into the channel timeline so the report shows up
+    // alongside other chat content. This is what makes the report "reflect"
+    // in the chat (issue #3 from the user feedback). We send the file URL
+    // as the message body so the existing FilePreview renderer picks it up.
+    try {
+      const ChannelMessage = require("../models/ChannelMessage");
+      const monthLabelFor = (m) =>
+        [
+          "January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December",
+        ][m - 1] || String(m);
+      const reportLabel = req.body.title ||
+        `${monthLabelFor(month)} ${year} task report`;
+      const systemMessage = await new ChannelMessage({
+        channelId,
+        sender: null,
+        isSystem: true,
+        systemLabel: "Monthly Report",
+        message: url,
+        // Flatten the report metadata into the visible label so users see
+        // *what* the file is, not just the filename.
+        replyPreview: {
+          message: reportLabel,
+          senderName: "Monthly Report",
+        },
+        seenBy: [],
+      }).save();
+      const io = getIo();
+      io.to(channelId.toString()).emit("new-channel-message", systemMessage);
+    } catch (chatPostError) {
+      // Non-fatal — the report itself is saved even if the system message
+      // fails to post.
+      console.warn(
+        "Could not post report system message:",
+        chatPostError?.message
+      );
+    }
+
     // Notify everyone currently in the channel room.
     try {
       const io = getIo();
