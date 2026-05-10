@@ -9,6 +9,7 @@ const {
 } = require("../controllers/channelChatsController");
 const {
   getChannelTasks,
+  getAllTasks,
   createChannelTask,
   updateChannelTask,
   deleteChannelTask,
@@ -38,6 +39,9 @@ router.get(
   authMiddleware,
   getChannelMentionCandidates
 );
+
+// All tasks across channels (admin = all, employee = assigned to them)
+router.get("/tasks/all", authMiddleware, getAllTasks);
 
 // Tasks
 router.get("/:channelId/tasks", authMiddleware, getChannelTasks);

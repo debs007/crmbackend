@@ -1646,8 +1646,80 @@ const addTaskComment = async (req, res) => {
   }
 };
 
+const getAllTasks = async (req, res) => {
+  try {
+    const requesterId = req.user?.userId;
+    if (!requesterId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const admin = await Admin.findById(requesterId).lean();
+    const isAdmin = !!admin;
+
+    // Build base query — employee sees only their assigned tasks
+    const taskQuery = isAdmin ? {} : { assignedTo: requesterId };
+
+    const { search = "", status = "", priority = "", tag = "" } = req.query;
+
+    if (search?.trim()) {
+      const term = escapeRegex(search.trim());
+      taskQuery.$or = [
+        { title: { $regex: term, $options: "i" } },
+        { taskNumber: { $regex: term, $options: "i" } },
+      ];
+    }
+    if (status && VALID_STATUSES.includes(status)) taskQuery.status = status;
+    if (priority && VALID_PRIORITIES.includes(priority)) taskQuery.priority = priority;
+    if (tag?.trim()) taskQuery.tags = { $regex: escapeRegex(tag.trim()), $options: "i" };
+
+    const tasks = await ChannelTask.find(taskQuery)
+      .sort({ deadline: 1, createdAt: -1 })
+      .lean();
+
+    if (tasks.length === 0) {
+      return res.status(200).json({ success: true, groups: [] });
+    }
+
+    const channelIds = [...new Set(tasks.map((t) => t.channelId?.toString()).filter(Boolean))];
+    const channels = await Channel.find({ _id: { $in: channelIds } }, "_id name").lean();
+    const channelMap = {};
+    channels.forEach((c) => { channelMap[c._id.toString()] = c; });
+
+    const mappedTasks = await mapTasksWithUsers(tasks);
+
+    const groupMap = {};
+    mappedTasks.forEach((task) => {
+      const cId = task.channelId?.toString();
+      if (!cId) return;
+      const channel = channelMap[cId];
+      if (!groupMap[cId]) {
+        groupMap[cId] = {
+          channelId: cId,
+          channelName: channel?.name || "Unknown Channel",
+          tasks: [],
+        };
+      }
+      groupMap[cId].tasks.push({
+        ...task,
+        isOverdue:
+          task.status !== "Completed" &&
+          new Date(task.deadline).getTime() < Date.now(),
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      groups: Object.values(groupMap),
+    });
+  } catch (error) {
+    console.error("Error fetching all tasks:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
 module.exports = {
   getChannelTasks,
+  getAllTasks,
   createChannelTask,
   updateChannelTask,
   deleteChannelTask,
