@@ -18,7 +18,8 @@ const payslipSchema = new mongoose.Schema(
       max: 12,
       index: true,
     },
-    fileUrl: { type: String, required: true },
+    fileUrl: { type: String, default: "" },   // kept for backward compat
+    filePath: { type: String, default: "" },  // local disk path (relative to project root)
     fileName: { type: String, default: "payslip" },
     note: { type: String, default: "" },
     uploadedBy: {

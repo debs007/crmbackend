@@ -1,9 +1,16 @@
+const nodePath = require("path");
+const fs = require("fs");
 const Payslip = require("../models/Payslip");
 const User = require("../models/User");
 const Admin = require("../models/Admin");
-const { uploadToCloudinary } = require("../utils/fileUpload");
 const sendMail = require("../services/sendMail");
 const { emitToUser } = require("../utils/socket");
+
+// Ensure uploads/payslips folder exists
+const PAYSLIPS_DIR = nodePath.join(__dirname, "..", "uploads", "payslips");
+if (!fs.existsSync(PAYSLIPS_DIR)) {
+  fs.mkdirSync(PAYSLIPS_DIR, { recursive: true });
+}
 
 const parseInteger = (value) => {
   const num = Number(value);
@@ -57,18 +64,34 @@ exports.uploadPayslip = async (req, res) => {
         .json({ success: false, message: "Employee not found." });
     }
 
-    const fileName = file.originalname || `payslip-${year}-${month}.pdf`;
-    const url = await uploadToCloudinary(file.buffer, fileName, "payslips");
+    const originalName = file.originalname || `payslip-${year}-${month}.pdf`;
+    // Build a unique filename: employeeId_year_month_originalName
+    const safeOriginal = originalName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+    const diskFileName = `${employeeId}_${year}_${month}_${Date.now()}_${safeOriginal}`;
+    const diskFilePath = nodePath.join(PAYSLIPS_DIR, diskFileName);
 
-    // Re-uploading replaces the existing row for that month (upsert).
+    // Remove old file for this employee/year/month if one exists
+    const existing = await Payslip.findOne({ employeeId, year, month }).lean();
+    if (existing?.filePath) {
+      const oldPath = nodePath.join(__dirname, "..", existing.filePath);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+
+    // Write new file to disk
+    fs.writeFileSync(diskFilePath, file.buffer);
+
+    // Store relative path so it's portable
+    const relPath = nodePath.join("uploads", "payslips", diskFileName);
+
     const payslip = await Payslip.findOneAndUpdate(
       { employeeId, year, month },
       {
         employeeId,
         year,
         month,
-        fileUrl: url,
-        fileName,
+        fileUrl: "",          // no longer used
+        filePath: relPath,
+        fileName: originalName,
         note: note || "",
         uploadedBy: req.user.userId,
       },
@@ -172,11 +195,47 @@ exports.deletePayslip = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Payslip not found." });
     }
+    // Remove the file from disk
+    if (slip.filePath) {
+      const fullPath = nodePath.join(__dirname, "..", slip.filePath);
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
     return res.json({ success: true, message: "Payslip deleted." });
   } catch (error) {
     console.error("deletePayslip error:", error);
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// GET /payslips/download/:id — authenticated download; employee can only download their own
+exports.downloadPayslip = async (req, res) => {
+  try {
+    const requesterId = req.user?.userId;
+    const slip = await Payslip.findById(req.params.id).lean();
+    if (!slip) {
+      return res.status(404).json({ success: false, message: "Payslip not found." });
+    }
+
+    const isAdmin = await isAdminCaller(requesterId);
+    const isOwner = slip.employeeId?.toString() === requesterId?.toString();
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ success: false, message: "Not authorized." });
+    }
+
+    if (!slip.filePath) {
+      return res.status(404).json({ success: false, message: "File path missing." });
+    }
+
+    const fullPath = nodePath.join(__dirname, "..", slip.filePath);
+    if (!fs.existsSync(fullPath)) {
+      return res.status(404).json({ success: false, message: "File not found on server." });
+    }
+
+    res.download(fullPath, slip.fileName || "payslip.pdf");
+  } catch (error) {
+    console.error("downloadPayslip error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
