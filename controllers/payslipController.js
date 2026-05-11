@@ -99,21 +99,21 @@ exports.uploadPayslip = async (req, res) => {
     );
 
     // Best-effort notification — never fail the upload because the email failed.
-    try {
-      if (employee.email) {
-        const monthLabel = new Date(year, month - 1, 1).toLocaleString(
-          "en-US",
-          { month: "long" }
-        );
-        await sendMail(
-          employee.email,
-          `Your payslip for ${monthLabel} ${year} is ready`,
-          `Hello ${employee.name},\n\nYour payslip for ${monthLabel} ${year} is now available in your dashboard. Sign in to download it.\n\nBest regards,\nDigital Mitro`
-        );
-      }
-    } catch (mailError) {
-      console.warn("payslip email failed:", mailError?.message);
-    }
+    // try {
+    //   if (employee.email) {
+    //     const monthLabel = new Date(year, month - 1, 1).toLocaleString(
+    //       "en-US",
+    //       { month: "long" }
+    //     );
+    //     await sendMail(
+    //       employee.email,
+    //       `Your payslip for ${monthLabel} ${year} is ready`,
+    //       `Hello ${employee.name},\n\nYour payslip for ${monthLabel} ${year} is now available in your dashboard. Sign in to download it.\n\nBest regards,\nDigital Mitro`
+    //     );
+    //   }
+    // } catch (mailError) {
+    //   console.warn("payslip email failed:", mailError?.message);
+    // }
 
     // Push a soft-refresh event so any open employee dashboard updates.
     try {
