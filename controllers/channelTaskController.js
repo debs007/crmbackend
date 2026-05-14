@@ -1646,6 +1646,28 @@ const addTaskComment = async (req, res) => {
   }
 };
 
+// GET /channels/tasks/count
+// Returns just the pending task count for the sidebar badge. Lightweight —
+// hits the DB once with countDocuments, no task documents are returned.
+const getPendingTasksCount = async (req, res) => {
+  try {
+    const requesterId = req.user?.userId;
+    if (!requesterId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const admin = await Admin.findById(requesterId).lean();
+    const isAdmin = !!admin;
+    const query = isAdmin
+      ? { status: { $in: ["Assigned", "Acknowledged"] } }
+      : { assignedTo: requesterId, status: { $in: ["Assigned", "Acknowledged"] } };
+    const count = await ChannelTask.countDocuments(query);
+    return res.json({ success: true, pendingCount: count });
+  } catch (error) {
+    console.error("Error in getPendingTasksCount:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
 const getAllTasks = async (req, res) => {
   try {
     const requesterId = req.user?.userId;
@@ -1720,6 +1742,7 @@ const getAllTasks = async (req, res) => {
 module.exports = {
   getChannelTasks,
   getAllTasks,
+  getPendingTasksCount,
   createChannelTask,
   updateChannelTask,
   deleteChannelTask,
