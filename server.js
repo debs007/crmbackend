@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const { initSocket } = require('./utils/socket');
 const connectDB = require('./config/db');
 const { startCronJobs } = require('./utils/autoUpdateAttandance');
@@ -58,6 +60,15 @@ app.use("/client", clientRoutes);
 // New endpoints
 app.use("/profile", profileRoutes);   // feature #1 — avatars
 app.use("/payslips", payslipRoutes);  // feature #2 — payslips
+
+// ✅ Serve uploaded files (reports etc.) from local disk (fix #7)
+// Files are stored at /uploads/reports/<filename> on the server.
+// They are served publicly at /uploads/<filename>.
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const reportsDir = path.join(uploadsDir, "reports");
+if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
+app.use("/uploads", express.static(uploadsDir));
 
 // ✅ Basic API health check
 app.get('/', (req, res) => {

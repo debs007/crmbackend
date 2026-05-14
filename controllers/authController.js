@@ -174,22 +174,19 @@ exports.adminLogin = async (req, res) => {
     adminFound.otpExpiration = otpExpiration;
     await adminFound.save();
 
-    const emailBody = `Your OTP for login is: ${otp}\n\nThis OTP is valid for 5 minutes.`;
-    
-    //disabling mail sent
-    // const mailSent = await sendMail(
-    //   adminFound.email,
-    //   "Your OTP for Admin Login",
-    //   emailBody
-    // );
-//End
-
-//Temp otp verify
-const mailSent = true;
-//end
+    // TEMP: OTP bypass for testing — re-enable sendMail before production
+    console.log(`[DEV] OTP for ${adminFound.email}: ${otp}`);
+    const mailSent = await sendMail(
+      adminFound.email,
+      "Your login OTP — Digital Mitro CRM",
+      otp,         // just the 6-digit code — template wraps it
+      "otp"        // tells sendMail to use the OTP-specific template
+    ).catch(() => ({ success: false }));
+    // Treat mail failure as non-fatal in dev — OTP is still logged above.
+    const mailOk = mailSent?.success !== false;
 
 
-    if (mailSent) {
+    if (mailOk) {
       return res.status(200).json({
         message:
           "OTP sent to email. Please check your email to complete login.",

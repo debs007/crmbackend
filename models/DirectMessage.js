@@ -14,6 +14,10 @@ const DirectMessageSchema = new mongoose.Schema({
     type: [String],
     default: [],
   },
+  // Pin fields — same as ChannelMessage
+  isPinned: { type: Boolean, default: false, index: true },
+  pinnedBy: { type: mongoose.Schema.Types.ObjectId, default: null },
+  pinnedAt: { type: Date, default: null },
   replyTo: { type: mongoose.Schema.Types.ObjectId, ref: "DirectMessage", default: null },
   replyPreview: {
     message: { type: String },

@@ -479,4 +479,58 @@ module.exports = {
   getAllUser,
   readMessage,
   clearConversation,
+  togglePinDirectMessage,
+  getPinnedDirectMessages,
 };
+
+// PATCH /message/:messageId/pin — toggle pin on a DM
+async function togglePinDirectMessage(req, res) {
+  try {
+    const { messageId } = req.params;
+    const userId = req.user?.userId;
+    const msg = await DirectMessage.findById(messageId);
+    if (!msg) return res.status(404).json({ success: false, message: "Message not found." });
+
+    const shouldPin = !msg.isPinned;
+    msg.isPinned = shouldPin;
+    msg.pinnedBy = shouldPin ? userId : null;
+    msg.pinnedAt = shouldPin ? new Date() : null;
+    await msg.save({ validateBeforeSave: false });
+
+    // Notify both participants.
+    const { emitToUser: emit } = require("../utils/socket");
+    [msg.sender?.toString(), msg.receiver?.toString()].filter(Boolean).forEach((uid) => {
+      emit(uid, "dm-message-pinned", {
+        messageId: msg._id,
+        isPinned: msg.isPinned,
+        pinnedBy: msg.pinnedBy,
+        pinnedAt: msg.pinnedAt,
+      });
+    });
+
+    return res.json({ success: true, isPinned: msg.isPinned, message: msg });
+  } catch (error) {
+    console.error("togglePinDirectMessage error:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+}
+
+// GET /message/pinned?with=<userId> — pinned messages in a DM conversation
+async function getPinnedDirectMessages(req, res) {
+  try {
+    const userId = req.user?.userId;
+    const otherId = req.query.with;
+    if (!otherId) return res.status(400).json({ success: false, message: "Missing 'with' param." });
+    const pinned = await DirectMessage.find({
+      isPinned: true,
+      $or: [
+        { sender: userId, receiver: otherId },
+        { sender: otherId, receiver: userId },
+      ],
+    }).sort({ pinnedAt: -1 }).lean();
+    return res.json({ success: true, pinned });
+  } catch (error) {
+    console.error("getPinnedDirectMessages error:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+}

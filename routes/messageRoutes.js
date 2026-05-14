@@ -10,6 +10,8 @@ const {
   getAllUser,
   readMessage,
   clearConversation,
+  togglePinDirectMessage,
+  getPinnedDirectMessages,
 } = require("../controllers/messageController");
 
 const router = express.Router();
@@ -25,3 +27,6 @@ router.patch("/messages/:messageId", authMiddleware, editMessage);
 router.delete("/messages/:messageId", authMiddleware, deleteMessage);
 
 module.exports = router;
+
+router.patch("/messages/:messageId/pin", authMiddleware, togglePinDirectMessage);
+router.get("/pinned", authMiddleware, getPinnedDirectMessages);

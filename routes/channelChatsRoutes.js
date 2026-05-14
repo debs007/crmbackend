@@ -6,10 +6,13 @@ const {
   editChannelMessage,
   deleteChannelMessage,
   getChannelMentionCandidates,
+  togglePinChannelMessage,
+  getPinnedChannelMessages,
 } = require("../controllers/channelChatsController");
 const {
   getChannelTasks,
   getAllTasks,
+  getPendingTasksCount,
   createChannelTask,
   updateChannelTask,
   deleteChannelTask,
@@ -29,9 +32,13 @@ const router = express.Router();
 router.post("/send", sendChannelMessage);
 router.post("/:channelId/read", authMiddleware, markChannelMessagesAsRead);
 
-// Per-message actions (edit / delete) - feature #3 and #5
+// Per-message actions (edit / delete / pin)
 router.patch("/messages/:messageId", authMiddleware, editChannelMessage);
 router.delete("/messages/:messageId", authMiddleware, deleteChannelMessage);
+router.patch("/messages/:messageId/pin", authMiddleware, togglePinChannelMessage);
+
+// Pinned messages for a channel
+router.get("/:channelId/pinned", authMiddleware, getPinnedChannelMessages);
 
 // Mention candidates - feature #4
 router.get(
@@ -42,6 +49,7 @@ router.get(
 
 // All tasks across channels (admin = all, employee = assigned to them)
 router.get("/tasks/all", authMiddleware, getAllTasks);
+router.get("/tasks/count", authMiddleware, getPendingTasksCount);
 
 // Tasks
 router.get("/:channelId/tasks", authMiddleware, getChannelTasks);

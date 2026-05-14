@@ -465,3 +465,49 @@ exports.getChannelMentionCandidates = async (req, res) => {
       .json({ success: false, message: "Internal Server Error" });
   }
 };
+
+// PATCH /channels/messages/:messageId/pin
+// Toggles isPinned on a channel message. Anyone in the channel can pin/unpin.
+exports.togglePinChannelMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const userId = req.user?.userId;
+    const msg = await ChannelMessage.findById(messageId);
+    if (!msg) return res.status(404).json({ success: false, message: "Message not found." });
+
+    const shouldPin = !msg.isPinned;
+    msg.isPinned = shouldPin;
+    msg.pinnedBy = shouldPin ? userId : null;
+    msg.pinnedAt = shouldPin ? new Date() : null;
+    await msg.save({ validateBeforeSave: false });
+
+    // Broadcast so all clients update the pin banner without reload.
+    const io = getIo();
+    io.to(msg.channelId.toString()).emit("channel-message-pinned", {
+      messageId: msg._id,
+      isPinned: msg.isPinned,
+      pinnedBy: msg.pinnedBy,
+      pinnedAt: msg.pinnedAt,
+    });
+
+    return res.json({ success: true, isPinned: msg.isPinned, message: msg });
+  } catch (error) {
+    console.error("togglePinChannelMessage error:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
+// GET /channels/:channelId/pinned
+// Returns all pinned messages in a channel, newest pin first.
+exports.getPinnedChannelMessages = async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const pinned = await ChannelMessage.find({ channelId, isPinned: true })
+      .sort({ pinnedAt: -1 })
+      .lean();
+    return res.json({ success: true, pinned });
+  } catch (error) {
+    console.error("getPinnedChannelMessages error:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};

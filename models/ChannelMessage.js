@@ -5,6 +5,14 @@ const ChannelMessageSchema = new mongoose.Schema({
   sender: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   isSystem: { type: Boolean, default: false },
   systemLabel: { type: String, default: null },
+  // When isSystem=true and the message represents a report upload, this
+  // stores the ChannelMonthlyReport _id so we can cascade-delete the message
+  // when the report is deleted (fix #6b).
+  reportId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+  // Pin fields — WhatsApp style (fix #5). No time constraint. Anyone can pin.
+  isPinned: { type: Boolean, default: false, index: true },
+  pinnedBy: { type: mongoose.Schema.Types.ObjectId, default: null },
+  pinnedAt: { type: Date, default: null },
   message: {
     type: String,
     // Required only when there are no attachments; an attachment-only post
