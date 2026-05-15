@@ -176,15 +176,15 @@ exports.adminLogin = async (req, res) => {
 
     // TEMP: OTP bypass for testing — re-enable sendMail before production
     console.log(`[DEV] OTP for ${adminFound.email}: ${otp}`);
-    const mailSent = await sendMail(
-      adminFound.email,
-      "Your login OTP — Digital Mitro CRM",
-      otp,         // just the 6-digit code — template wraps it
-      "otp"        // tells sendMail to use the OTP-specific template
-    ).catch(() => ({ success: false }));
-    // Treat mail failure as non-fatal in dev — OTP is still logged above.
-    const mailOk = mailSent?.success !== false;
-
+    // const mailSent = await sendMail(
+    //   adminFound.email,
+    //   "Your login OTP — Digital Mitro CRM",
+    //   otp,         // just the 6-digit code — template wraps it
+    //   "otp"        // tells sendMail to use the OTP-specific template
+    // ).catch(() => ({ success: false }));
+    // // Treat mail failure as non-fatal in dev — OTP is still logged above.
+    // const mailOk = mailSent?.success !== false;
+    const mailOk = true;
 
     if (mailOk) {
       return res.status(200).json({
