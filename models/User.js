@@ -8,6 +8,9 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     phone: { type: Number, required: true },
     password: { type: String, required: true },
+    // Employee ID — used to match rows in the salary CSV upload.
+    // e.g. "EMP001". Unique per workspace; optional for backward compat.
+    empId: { type: String, default: "", index: true },
     employeeType: { type: String, enum: ["Full-Time", "Part-Time"], default: "Full-Time" },
     type: { type: String, enum: ["Day", "Night"], required: true },
     avatar: { type: String, default: "" },
