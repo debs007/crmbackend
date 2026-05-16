@@ -10,12 +10,13 @@ const normalizeHeader = (h) => (h || "").replace(/[\s_\-\.]/g, "").toLowerCase()
 
 const HEADER_ALIASES = {
   empid:        ["empid","empno","employeeid","employeeno","emp"],
+  email:        ["email","emailaddress","employeeemail","mail"],
   name:         ["name","employeename","empname","fullname"],
   position:     ["position","designation","role","jobtitle"],
   grosssalary:  ["grosssalary","gross","grossamount","ctc"],
   attendance:   ["attendance","presentdays","working","daysworked","workingdays"],
   totalabsent:  ["totalabsent","absent","absentdays","totalabsents","leaves"],
-  inhandsalary: ["inhandsalary","inhand","netsalary","netpay","nettakeaway","takehome","netsalary"],
+  inhandsalary: ["inhandsalary","inhand","netsalary","netpay","nettakeaway","takehome"],
   ptax:         ["ptax","professionaltax","ptaxamount","tax"],
   remarks:      ["remarks","note","notes","comment","comments"],
 };
@@ -54,21 +55,23 @@ function parseCsv(text) {
     if (!lines[i].trim()) continue;
     const cols = splitLine(lines[i]);
     const row = {
-      empId: "", name: "", position: "", grossSalary: "",
+      empId: "", email: "", name: "", position: "", grossSalary: "",
       attendance: "", totalAbsent: "", inHandSalary: "", ptax: "", remarks: "",
     };
-    // Camel-case field names for the canonical keys
     const keyMap = {
-      empid: "empId", name: "name", position: "position",
+      empid: "empId", email: "email", name: "name", position: "position",
       grosssalary: "grossSalary", attendance: "attendance",
       totalabsent: "totalAbsent", inhandsalary: "inHandSalary",
       ptax: "ptax", remarks: "remarks",
     };
     colToField.forEach((field, colIdx) => {
       if (field && keyMap[field] !== undefined) {
-        row[keyMap[field]] = cols[colIdx] ?? "";
+        row[keyMap[field]] = (cols[colIdx] ?? "").trim();
       }
     });
+    // Skip rows where every field is empty (blank lines in the CSV)
+    const hasData = Object.values(row).some((v) => v !== "");
+    if (!hasData) continue;
     rows.push(row);
   }
   return { headers: rawHeaders, rows };
@@ -89,10 +92,19 @@ exports.uploadSalarySheet = async (req, res) => {
       return res.status(400).json({ success: false, message: "Valid month and year required." });
     }
 
-    const text = file.buffer.toString("utf-8");
-    const { rows } = parseCsv(text);
+    // Strip BOM if present (common in Excel-exported CSVs)
+    let text = file.buffer.toString("utf-8").replace(/^\uFEFF/, "");
+    const { rows, error: parseError } = parseCsv(text);
+
+    if (parseError) {
+      return res.status(400).json({ success: false, message: parseError });
+    }
     if (!rows.length) {
-      return res.status(400).json({ success: false, message: "CSV has no data rows." });
+      return res.status(400).json({ success: false, message: "CSV has no data rows. Check that headers match: EmpId, Name, Position, Gross Salary, Attendance, Total Absent, In Hand Salary, Ptax, Remarks" });
+    }
+    // Sanity cap — if parsed row count is suspiciously large, reject
+    if (rows.length > 5000) {
+      return res.status(400).json({ success: false, message: `CSV parsing produced ${rows.length} rows which seems wrong. Check the file format.` });
     }
 
     const sheet = await SalarySheet.create({
@@ -103,7 +115,7 @@ exports.uploadSalarySheet = async (req, res) => {
       rows,
     });
 
-    return res.status(201).json({ success: true, sheet });
+    return res.status(201).json({ success: true, sheet, rowCount: rows.length });
   } catch (err) {
     console.error("uploadSalarySheet error:", err?.message, err?.stack?.split("\n")[1]);
     return res.status(500).json({ success: false, message: err?.message || "Internal server error." });
@@ -118,18 +130,18 @@ exports.listSalarySheets = async (req, res) => {
       const sheets = await SalarySheet.find().sort({ year: -1, month: -1 }).lean();
       return res.json({ success: true, sheets });
     }
-    // Employee — find their empId
-    const user = await User.findById(req.user?.userId).select("empId name").lean();
-    if (!user?.empId) {
-      return res.json({ success: true, sheets: [], message: "No employee ID on your profile." });
+    // Employee — find their email and match against CSV rows
+    const user = await User.findById(req.user?.userId).select("email name").lean();
+    if (!user?.email) {
+      return res.json({ success: true, sheets: [], message: "No email on your profile." });
     }
-    const sheets = await SalarySheet.find({ "rows.empId": user.empId })
+    const sheets = await SalarySheet.find({ "rows.email": user.email.toLowerCase() })
       .sort({ year: -1, month: -1 })
       .lean();
-    // Trim each sheet to only the employee's row
+    // Trim each sheet to only this employee's row
     const trimmed = sheets.map((s) => ({
       ...s,
-      rows: s.rows.filter((r) => r.empId === user.empId),
+      rows: s.rows.filter((r) => r.email?.toLowerCase() === user.email.toLowerCase()),
     }));
     return res.json({ success: true, sheets: trimmed });
   } catch (err) {

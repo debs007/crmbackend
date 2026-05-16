@@ -9,15 +9,16 @@ const SalarySheetSchema = new mongoose.Schema(
     title: { type: String, default: "" },
     rows: [
       {
-        empId: { type: String, default: "" },      // matches User.empId
-        name: { type: String, default: "" },
-        position: { type: String, default: "" },
-        grossSalary: { type: String, default: "" },
-        attendance: { type: String, default: "" },
-        totalAbsent: { type: String, default: "" },
+        empId:        { type: String, default: "" }, // display only
+        email:        { type: String, default: "" }, // used to match employee
+        name:         { type: String, default: "" },
+        position:     { type: String, default: "" },
+        grossSalary:  { type: String, default: "" },
+        attendance:   { type: String, default: "" },
+        totalAbsent:  { type: String, default: "" },
         inHandSalary: { type: String, default: "" },
-        ptax: { type: String, default: "" },
-        remarks: { type: String, default: "" },
+        ptax:         { type: String, default: "" },
+        remarks:      { type: String, default: "" },
       },
     ],
   },
@@ -26,6 +27,6 @@ const SalarySheetSchema = new mongoose.Schema(
 
 // Index so employee queries by empId are fast.
 SalarySheetSchema.index({ year: 1, month: 1 });
-SalarySheetSchema.index({ "rows.empId": 1 });
+SalarySheetSchema.index({ "rows.email": 1 });
 
 module.exports = mongoose.model("SalarySheet", SalarySheetSchema);
