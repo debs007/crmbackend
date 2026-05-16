@@ -4,13 +4,31 @@ const User = require("../models/User");
 
 const isAdmin = async (userId) => !!(await Admin.findById(userId).select("_id").lean());
 
-// Expected CSV column headers (case-insensitive, spaces/underscores flexible).
-const HEADERS = ["empid","name","position","grosssalary","attendance","totalabsent","inhandsalary","ptax","remarks"];
-const normalizeHeader = (h) => h.replace(/[\s_-]/g, "").toLowerCase();
+// Expected CSV column headers with aliases so common variations all match.
+// Normalize: lowercase, remove all spaces/underscores/dashes/dots.
+const normalizeHeader = (h) => (h || "").replace(/[\s_\-\.]/g, "").toLowerCase();
+
+const HEADER_ALIASES = {
+  empid:        ["empid","empno","employeeid","employeeno","emp"],
+  name:         ["name","employeename","empname","fullname"],
+  position:     ["position","designation","role","jobtitle"],
+  grosssalary:  ["grosssalary","gross","grossamount","ctc"],
+  attendance:   ["attendance","presentdays","working","daysworked","workingdays"],
+  totalabsent:  ["totalabsent","absent","absentdays","totalabsents","leaves"],
+  inhandsalary: ["inhandsalary","inhand","netsalary","netpay","nettakeaway","takehome","netsalary"],
+  ptax:         ["ptax","professionaltax","ptaxamount","tax"],
+  remarks:      ["remarks","note","notes","comment","comments"],
+};
+
+// Build a map from any alias → canonical key
+const ALIAS_MAP = {};
+Object.entries(HEADER_ALIASES).forEach(([canonical, aliases]) => {
+  aliases.forEach((a) => { ALIAS_MAP[a] = canonical; });
+});
 
 // Very lightweight CSV parser — handles quoted fields with commas inside.
 function parseCsv(text) {
-  const lines = text.split(/\r?\n/).filter(Boolean);
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return { headers: [], rows: [] };
 
   const splitLine = (line) => {
@@ -27,29 +45,31 @@ function parseCsv(text) {
   };
 
   const rawHeaders = splitLine(lines[0]);
-  const normalizedHeaders = rawHeaders.map(normalizeHeader);
 
-  const idx = {};
-  HEADERS.forEach((h) => {
-    const i = normalizedHeaders.indexOf(h);
-    idx[h] = i;
-  });
+  // Map each column index → canonical field name (or null if unknown)
+  const colToField = rawHeaders.map((h) => ALIAS_MAP[normalizeHeader(h)] || null);
 
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
     const cols = splitLine(lines[i]);
-    if (!cols.length) continue;
-    rows.push({
-      empId:        cols[idx.empid] ?? "",
-      name:         cols[idx.name] ?? "",
-      position:     cols[idx.position] ?? "",
-      grossSalary:  cols[idx.grosssalary] ?? "",
-      attendance:   cols[idx.attendance] ?? "",
-      totalAbsent:  cols[idx.totalabsent] ?? "",
-      inHandSalary: cols[idx.inhandsalary] ?? "",
-      ptax:         cols[idx.ptax] ?? "",
-      remarks:      cols[idx.remarks] ?? "",
+    const row = {
+      empId: "", name: "", position: "", grossSalary: "",
+      attendance: "", totalAbsent: "", inHandSalary: "", ptax: "", remarks: "",
+    };
+    // Camel-case field names for the canonical keys
+    const keyMap = {
+      empid: "empId", name: "name", position: "position",
+      grosssalary: "grossSalary", attendance: "attendance",
+      totalabsent: "totalAbsent", inhandsalary: "inHandSalary",
+      ptax: "ptax", remarks: "remarks",
+    };
+    colToField.forEach((field, colIdx) => {
+      if (field && keyMap[field] !== undefined) {
+        row[keyMap[field]] = cols[colIdx] ?? "";
+      }
     });
+    rows.push(row);
   }
   return { headers: rawHeaders, rows };
 }
@@ -85,8 +105,8 @@ exports.uploadSalarySheet = async (req, res) => {
 
     return res.status(201).json({ success: true, sheet });
   } catch (err) {
-    console.error("uploadSalarySheet:", err);
-    return res.status(500).json({ success: false, message: "Internal server error." });
+    console.error("uploadSalarySheet error:", err?.message, err?.stack?.split("\n")[1]);
+    return res.status(500).json({ success: false, message: err?.message || "Internal server error." });
   }
 };
 

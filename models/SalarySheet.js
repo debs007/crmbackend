@@ -9,7 +9,7 @@ const SalarySheetSchema = new mongoose.Schema(
     title: { type: String, default: "" },
     rows: [
       {
-        empId: { type: String, required: true },      // matches User.empId
+        empId: { type: String, default: "" },      // matches User.empId
         name: { type: String, default: "" },
         position: { type: String, default: "" },
         grossSalary: { type: String, default: "" },
